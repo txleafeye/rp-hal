@@ -63,6 +63,7 @@ pub mod reboot;
 pub mod resets;
 pub mod rom_data;
 pub mod rosc;
+pub mod sha256;
 pub mod sio;
 pub mod spi;
 pub mod timer;
