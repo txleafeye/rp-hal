@@ -10,9 +10,6 @@
 //!
 //! - Hardware-accelerated SHA-256 hashing
 //! - Supports both big-endian and little-endian data
-//! - Byte swapping for proper SHA-256 format
-//! - DMA support for large data transfers (via DREQ_SHA256)
-//! - Error detection and recovery
 //!
 //! ## Basic Usage
 //!
@@ -36,11 +33,6 @@
 //!
 //! // result is a 32-byte SHA-256 hash
 //! ```
-//!
-//! ## NIST Test Vectors
-//!
-//! - SHA256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-//! - SHA256("abc") = ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
 
 use crate::pac::sha256;
 use crate::pac::SHA256;
