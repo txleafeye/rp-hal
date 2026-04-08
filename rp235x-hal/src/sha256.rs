@@ -28,9 +28,10 @@
 //! let mut state = Sha256State::new();
 //!
 //! // Compute hash
-//! let data = b"Hello, World!";
+//! let data = b"Hello, World!"; // must be bytes
 //! state.start(&mut sha256, Endianness::Big);
-//! state.update_blocking(&mut sha256, data);
+//! state.update(&mut sha256, data);
+//! state.update(&mut sha256, data); // more data can be appended
 //! let result = state.finish(&mut sha256);
 //!
 //! // result is a 32-byte SHA-256 hash
@@ -40,8 +41,6 @@
 //!
 //! - SHA256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 //! - SHA256("abc") = ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
-
-use core::marker::PhantomData;
 
 use crate::pac::sha256;
 use crate::pac::SHA256;
@@ -58,36 +57,13 @@ pub enum Endianness {
     Big,
 }
 
-/// DMA transfer size for hardware acceleration
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DmaSize {
-    /// 8-bit transfers (1 byte)
-    Bits8 = 0,
-    /// 16-bit transfers (2 bytes)
-    Bits16 = 1,
-    /// 32-bit transfers (4 bytes)
-    Bits32 = 2,
-}
-
-impl DmaSize {
-    /// Convert byte size to DmaSize
-    pub fn from_bytes(size: u8) -> Self {
-        match size {
-            1 => DmaSize::Bits8,
-            2 => DmaSize::Bits16,
-            4 => DmaSize::Bits32,
-            _ => panic!("DMA size must be 1, 2, or 4 bytes"),
-        }
-    }
-}
-
 /// SHA-256 peripheral wrapper
 ///
 /// This provides direct register access to the SHA-256 hardware accelerator.
 /// For higher-level functionality, use `Sha256State` which handles padding
 /// and multi-block hashing.
 pub struct Sha256 {
-    register_block: *const sha256::RegisterBlock,
+    device: SHA256,
 }
 
 unsafe impl Send for Sha256 {}
@@ -97,29 +73,18 @@ impl Sha256 {
     ///
     /// Note: Unlike other peripherals, SHA256 does not require explicit reset handling.
     /// The hardware is ready to use immediately.
-    pub fn new(peripheral: SHA256) -> Self {
-        let _ = peripheral; // Consume the peripheral to ensure uniqueness
-        Self {
-            register_block: SHA256::PTR,
-        }
+    pub fn new(device: SHA256) -> Self {
+        Self { device }
     }
 
     /// Get the CSR register
-    #[inline]
     fn csr(&self) -> &sha256::CSR {
-        unsafe { (*self.register_block).csr() }
+        self.device.csr()
     }
 
     /// Get the WDATA register
-    #[inline]
     fn wdata(&self) -> &sha256::WDATA {
-        unsafe { (*self.register_block).wdata() }
-    }
-
-    /// Get the SUM registers as a pointer
-    #[inline]
-    fn sum_ptr(&self) -> *const u32 {
-        unsafe { (*self.register_block).sum0() as *const _ as *const u32 }
+        self.device.wdata()
     }
 
     /// Enable or disable byte swapping
@@ -179,8 +144,7 @@ impl Sha256 {
     /// # Safety
     /// The caller must ensure the hardware is ready
     pub unsafe fn put_word(&self, word: u32) {
-        let wdata = self.wdata();
-        wdata.write(|w| w.bits(word));
+        (self.wdata() as *const _ as *mut u32).write_volatile(word);
     }
 
     /// Write one byte to the hardware
@@ -188,15 +152,7 @@ impl Sha256 {
     /// # Safety
     /// The caller must ensure the hardware is ready
     pub unsafe fn put_byte(&self, byte: u8) {
-        let wdata_ptr = self.wdata() as *const _ as *mut u8;
-        wdata_ptr.write_volatile(byte);
-    }
-
-    /// Check for "not ready" error
-    ///
-    /// Returns `true` if data was written when the hardware was not ready.
-    pub fn err_not_ready(&self) -> bool {
-        self.csr().read().err_wdata_not_rdy().bit()
+        (self.wdata() as *const _ as *mut u8).write_volatile(byte);
     }
 
     /// Clear "not ready" error.
@@ -205,19 +161,12 @@ impl Sha256 {
             .modify(|_, w| w.err_wdata_not_rdy().clear_bit_by_one());
     }
 
-    /// Read the CSR register value for debugging.
-    #[allow(dead_code)]
-    fn read_csr(&self) -> u32 {
-        self.csr().read().bits()
-    }
-
     /// Read the 256-bit hash result
     ///
     /// # Safety
     /// The caller must ensure the result is valid.
     pub unsafe fn get_result(&self) -> [u32; 8] {
-        let sum_ptr = self.sum_ptr();
-        core::ptr::read_unaligned(sum_ptr as *const [u32; 8])
+        (self.device.sum0() as *const _ as *const [u32; 8]).read_volatile()
     }
 }
 
@@ -239,8 +188,8 @@ impl Sha256 {
 /// state.start(&mut sha256, Endianness::Big);
 ///
 /// // Hash data in chunks
-/// state.update_blocking(&mut sha256, b"Hello, ");
-/// state.update_blocking(&mut sha256, b"World!");
+/// state.update(&mut sha256, b"Hello, ");
+/// state.update(&mut sha256, b"World!");
 ///
 /// let result = state.finish(&mut sha256);
 /// ```
@@ -249,7 +198,6 @@ pub struct Sha256State {
     total_data_size: usize,
     cache: [u8; 4],
     cache_used: u8,
-    _marker: PhantomData<()>,
 }
 
 impl Default for Sha256State {
@@ -266,7 +214,6 @@ impl Sha256State {
             total_data_size: 0,
             cache: [0; 4],
             cache_used: 0,
-            _marker: PhantomData,
         }
     }
 
@@ -279,6 +226,7 @@ impl Sha256State {
         self.endianness = endianness;
         self.total_data_size = 0;
         self.cache_used = 0;
+        self.cache = [0; 4];
 
         sha256.set_bswap(endianness == Endianness::Big);
         sha256.start();
@@ -286,12 +234,13 @@ impl Sha256State {
 
     /// Update hash with data (non-blocking)
     ///
-    /// This method writes data to the hardware as quickly as possible.
-    /// Any unaligned bytes are cached for the next update call.
+    /// It only uses 32-bit writes; if the data passed to it is not a
+    /// multiple of 4 bytes, left over (unaligned) bytes will be cached
+    /// for the next update() or will be flushed during finish().
     ///
     /// # Note
-    /// This does not wait for the hardware to be ready between writes.
-    /// Use `update_blocking()` for simpler code that handles readiness automatically.
+    /// This function will block until the SHA256 peripheral is ready
+    /// to have data written to it.
     pub fn update(&mut self, sha256: &mut Sha256, data: &[u8]) {
         let mut pos = 0;
 
@@ -312,28 +261,20 @@ impl Sha256State {
         }
 
         while pos + 4 <= data.len() {
-            sha256.wait_ready_blocking();
-
             let word = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
+            sha256.wait_ready_blocking();
             unsafe { sha256.put_word(word) };
             pos += 4;
         }
 
         while pos < data.len() {
+            // copy any unaligned bytes to cache
             self.cache[self.cache_used as usize] = data[pos];
             self.cache_used += 1;
             pos += 1;
         }
 
         self.total_data_size += data.len();
-    }
-
-    /// Update hash with data (blocking)
-    ///
-    /// This method waits for the hardware to be ready before each write,
-    /// ensuring no data is lost.
-    pub fn update_blocking(&mut self, sha256: &mut Sha256, data: &[u8]) {
-        self.update(sha256, data);
     }
 
     /// Finalize the hash and return the result
@@ -345,35 +286,7 @@ impl Sha256State {
     ///
     /// Then waits for the hash to complete and returns the 32-byte result.
     pub fn finish(&mut self, sha256: &mut Sha256) -> Sha256Result {
-        if self.total_data_size == 0 && self.cache_used == 0 {
-            sha256.wait_ready_blocking();
-            unsafe { sha256.put_word(0x00000080) };
-
-            for _ in 0..13 {
-                sha256.wait_ready_blocking();
-                unsafe { sha256.put_word(0) };
-            }
-
-            sha256.wait_ready_blocking();
-            unsafe { sha256.put_word(0) };
-            sha256.wait_ready_blocking();
-            unsafe { sha256.put_word(0) };
-
-            sha256.wait_valid_blocking();
-
-            let result_words = unsafe { sha256.get_result() };
-            let mut result = [0u8; 32];
-            for i in 0..8 {
-                let bytes = result_words[i].to_be_bytes();
-                result[i * 4] = bytes[0];
-                result[i * 4 + 1] = bytes[1];
-                result[i * 4 + 2] = bytes[2];
-                result[i * 4 + 3] = bytes[3];
-            }
-
-            return result;
-        }
-
+        // flush remaining bytes in cache
         for i in 0..self.cache_used {
             sha256.wait_ready_blocking();
             unsafe { sha256.put_byte(self.cache[i as usize]) };
