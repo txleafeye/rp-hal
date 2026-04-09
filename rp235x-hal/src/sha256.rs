@@ -17,8 +17,8 @@
 //! // result is a 32-byte SHA-256 hash
 //!
 //! // Hash data in chunks
-//! sha256.update(b"Hello, ");
-//! sha256.update(b"world!");
+//! sha256.digest(b"Hello, ");
+//! sha256.digest(b"world!");
 //! let result = sha256.finalize();
 //! ```
 
