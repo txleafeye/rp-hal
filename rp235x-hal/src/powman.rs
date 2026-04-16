@@ -3,7 +3,7 @@
 //! The POWMAN peripheral contains a mixture of functionality, including:
 //!
 //! * [x] An always-on timer (AOT) with alarm
-//! * [ ] Voltage Regulator Control
+//! * [x] Voltage Regulator Control
 //! * [ ] Brown-out detection
 //! * [ ] Low-power oscillator control
 //! * [ ] Using as GPIO as a time reference or wake-up signal
@@ -18,6 +18,7 @@ use crate::{
         DynPullType, FunctionSioInput, Pin,
     },
     pac,
+    vreg::VRegVoltage,
 };
 
 /// A frequency in kHz, represented as a fixed point 16.16 value
@@ -604,6 +605,48 @@ impl Powman {
         unsafe {
             Self::powman_set_bits(reg, bit as u16);
         }
+    }
+
+    /// Set the VREG voltage.
+    pub fn set_vreg_voltage(&mut self, voltage: VRegVoltage) {
+        // Unlock VREG_CTRL and release reset
+        self.device.vreg_ctrl().modify(|_r, w| {
+            unsafe {
+                w.bits(Self::KEY_VALUE);
+                w.unlock().set_bit();
+                w.rst_n().set_bit();
+            }
+            w
+        });
+
+        // Wait for update to complete
+        while self.device.vreg().read().update_in_progress().bit_is_set() {
+            core::hint::spin_loop();
+        }
+
+        // Set the voltage
+        self.device.vreg().modify(|_r, w| {
+            unsafe {
+                w.bits(Self::KEY_VALUE);
+                w.vsel().bits(voltage as u8);
+            }
+            w
+        });
+
+        // Wait for update to complete
+        while self.device.vreg().read().update_in_progress().bit_is_set() {
+            core::hint::spin_loop();
+        }
+
+        // Wait for voltage to stabilize
+        while self.device.vreg_sts().read().vout_ok().bit_is_clear() {
+            core::hint::spin_loop();
+        }
+    }
+
+    /// Get the current VREG voltage.
+    pub fn get_vreg_voltage(&self) -> Option<VRegVoltage> {
+        VRegVoltage::from_vsel_bits(self.device.vreg().read().vsel().bits())
     }
 
     /// Write to a POWMAN protected register, using the key
