@@ -206,6 +206,14 @@ pub enum ClockPin {
     Pin22(Pin<Gpio22, FunctionSioInput, DynPullType>),
 }
 
+/// The ways in which setting the regulator voltage can fail
+pub enum VRegError {
+    /// The voltage value read back from POWMAN did not match the value written
+    VRegReadbackMismatchError,
+    /// The voltage value read back from POWMAN could not be converted to a VRegVoltage
+    VRegVoltageConversionError,
+}
+
 /// The Power Management device
 pub struct Powman {
     device: pac::POWMAN,
@@ -608,7 +616,7 @@ impl Powman {
     }
 
     /// Set the VREG voltage.
-    pub fn set_vreg_voltage(&mut self, voltage: VRegVoltage) {
+    pub fn set_vreg_voltage(&mut self, voltage: VRegVoltage) -> Result<(), VRegError> {
         // Unlock VREG_CTRL and release reset
         self.device.vreg_ctrl().modify(|_r, w| {
             unsafe {
@@ -641,6 +649,19 @@ impl Powman {
         // Wait for voltage to stabilize
         while self.device.vreg_sts().read().vout_ok().bit_is_clear() {
             core::hint::spin_loop();
+        }
+
+        // Read back the voltage and return an Err if the requested voltage
+        // was not successfully read back as having been properly set.
+        match VRegVoltage::try_from(self.device.vreg().read().vsel().bits()) {
+            Ok(set_voltage) => {
+                if set_voltage != voltage {
+                    Err(VRegError::VRegReadbackMismatchError)
+                } else {
+                    Ok(())
+                }
+            }
+            Err(InvalidVRegVoltageError) => Err(VRegError::VRegVoltageConversionError),
         }
     }
 
