@@ -18,7 +18,7 @@ use crate::{
         DynPullType, FunctionSioInput, Pin,
     },
     pac,
-    vreg::VRegVoltage,
+    vreg::{InvalidVRegVoltageError, VRegVoltage},
 };
 
 /// A frequency in kHz, represented as a fixed point 16.16 value
@@ -645,8 +645,8 @@ impl Powman {
     }
 
     /// Get the current VREG voltage.
-    pub fn get_vreg_voltage(&self) -> Option<VRegVoltage> {
-        VRegVoltage::from_vsel_bits(self.device.vreg().read().vsel().bits())
+    pub fn get_vreg_voltage(&self) -> Result<VRegVoltage, InvalidVRegVoltageError> {
+        VRegVoltage::try_from(self.device.vreg().read().vsel().bits())
     }
 
     /// Write to a POWMAN protected register, using the key

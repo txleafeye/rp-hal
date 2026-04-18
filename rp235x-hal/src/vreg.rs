@@ -69,43 +69,48 @@ pub enum VRegVoltage {
     V3300mV = 0b11111,
 }
 
-impl VRegVoltage {
+/// Only binary values representable in five bits or less correspond
+/// to possible voltage settings of VSEL on RP235x.
+pub struct InvalidVRegVoltageError;
+
+impl TryFrom<u8> for VRegVoltage {
+    type Error = InvalidVRegVoltageError;
     /// Convert from raw register value to [`VRegVoltage`].
-    pub fn from_vsel_bits(bits: u8) -> Option<Self> {
+    fn try_from(bits: u8) -> Result<Self, InvalidVRegVoltageError> {
         match bits {
-            0b00000 => Some(VRegVoltage::V550mV),
-            0b00001 => Some(VRegVoltage::V600mV),
-            0b00010 => Some(VRegVoltage::V650mV),
-            0b00011 => Some(VRegVoltage::V700mV),
-            0b00100 => Some(VRegVoltage::V750mV),
-            0b00101 => Some(VRegVoltage::V800mV),
-            0b00110 => Some(VRegVoltage::V850mV),
-            0b00111 => Some(VRegVoltage::V900mV),
-            0b01000 => Some(VRegVoltage::V950mV),
-            0b01001 => Some(VRegVoltage::V1000mV),
-            0b01010 => Some(VRegVoltage::V1050mV),
-            0b01011 => Some(VRegVoltage::V1100mV),
-            0b01100 => Some(VRegVoltage::V1150mV),
-            0b01101 => Some(VRegVoltage::V1200mV),
-            0b01110 => Some(VRegVoltage::V1250mV),
-            0b01111 => Some(VRegVoltage::V1300mV),
-            0b10000 => Some(VRegVoltage::V1350mV),
-            0b10001 => Some(VRegVoltage::V1400mV),
-            0b10010 => Some(VRegVoltage::V1500mV),
-            0b10011 => Some(VRegVoltage::V1600mV),
-            0b10100 => Some(VRegVoltage::V1650mV),
-            0b10101 => Some(VRegVoltage::V1700mV),
-            0b10110 => Some(VRegVoltage::V1800mV),
-            0b10111 => Some(VRegVoltage::V1900mV),
-            0b11000 => Some(VRegVoltage::V2000mV),
-            0b11001 => Some(VRegVoltage::V2350mV),
-            0b11010 => Some(VRegVoltage::V2500mV),
-            0b11011 => Some(VRegVoltage::V2650mV),
-            0b11100 => Some(VRegVoltage::V2800mV),
-            0b11101 => Some(VRegVoltage::V3000mV),
-            0b11110 => Some(VRegVoltage::V3150mV),
-            0b11111 => Some(VRegVoltage::V3300mV),
-            _ => None,
+            0b00000 => Ok(VRegVoltage::V550mV),
+            0b00001 => Ok(VRegVoltage::V600mV),
+            0b00010 => Ok(VRegVoltage::V650mV),
+            0b00011 => Ok(VRegVoltage::V700mV),
+            0b00100 => Ok(VRegVoltage::V750mV),
+            0b00101 => Ok(VRegVoltage::V800mV),
+            0b00110 => Ok(VRegVoltage::V850mV),
+            0b00111 => Ok(VRegVoltage::V900mV),
+            0b01000 => Ok(VRegVoltage::V950mV),
+            0b01001 => Ok(VRegVoltage::V1000mV),
+            0b01010 => Ok(VRegVoltage::V1050mV),
+            0b01011 => Ok(VRegVoltage::V1100mV),
+            0b01100 => Ok(VRegVoltage::V1150mV),
+            0b01101 => Ok(VRegVoltage::V1200mV),
+            0b01110 => Ok(VRegVoltage::V1250mV),
+            0b01111 => Ok(VRegVoltage::V1300mV),
+            0b10000 => Ok(VRegVoltage::V1350mV),
+            0b10001 => Ok(VRegVoltage::V1400mV),
+            0b10010 => Ok(VRegVoltage::V1500mV),
+            0b10011 => Ok(VRegVoltage::V1600mV),
+            0b10100 => Ok(VRegVoltage::V1650mV),
+            0b10101 => Ok(VRegVoltage::V1700mV),
+            0b10110 => Ok(VRegVoltage::V1800mV),
+            0b10111 => Ok(VRegVoltage::V1900mV),
+            0b11000 => Ok(VRegVoltage::V2000mV),
+            0b11001 => Ok(VRegVoltage::V2350mV),
+            0b11010 => Ok(VRegVoltage::V2500mV),
+            0b11011 => Ok(VRegVoltage::V2650mV),
+            0b11100 => Ok(VRegVoltage::V2800mV),
+            0b11101 => Ok(VRegVoltage::V3000mV),
+            0b11110 => Ok(VRegVoltage::V3150mV),
+            0b11111 => Ok(VRegVoltage::V3300mV),
+            _ => Err(InvalidVRegVoltageError),
         }
     }
 }
